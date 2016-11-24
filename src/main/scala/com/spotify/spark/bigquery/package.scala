@@ -152,12 +152,13 @@ package object bigquery {
      */
     def saveAsBigQueryTable(tableRef: TableReference,
                             writeDisposition: WriteDisposition.Value,
-                            createDisposition: CreateDisposition.Value): Unit = {
+                            createDisposition: CreateDisposition.Value,
+                            isPartitionedByDay: Boolean): Unit = {
       val bucket = conf.get(BigQueryConfiguration.GCS_BUCKET_KEY)
       val temp = s"spark-bigquery-${System.currentTimeMillis()}=${Random.nextInt(Int.MaxValue)}"
       val gcsPath = s"gs://$bucket/hadoop/tmp/spark-bigquery/$temp"
       self.write.avro(gcsPath)
-      val df = bq.load(gcsPath, tableRef, writeDisposition, createDisposition)
+      val df = bq.load(gcsPath, tableRef, writeDisposition, createDisposition, isPartitionedByDay)
       delete(new Path(gcsPath))
       df
     }
@@ -167,11 +168,13 @@ package object bigquery {
      */
     def saveAsBigQueryTable(tableSpec: String,
                             writeDisposition: WriteDisposition.Value = null,
-                            createDisposition: CreateDisposition.Value = null): Unit =
+                            createDisposition: CreateDisposition.Value = null,
+                            isPartitionedByDay: Boolean = false): Unit =
       saveAsBigQueryTable(
         BigQueryStrings.parseTableReference(tableSpec),
         writeDisposition,
-        createDisposition)
+        createDisposition,
+        isPartitionedByDay)
 
     private def delete(path: Path): Unit = {
       val fs = FileSystem.get(path.toUri, conf)

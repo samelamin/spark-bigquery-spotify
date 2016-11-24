@@ -109,8 +109,23 @@ private[bigquery] class BigQueryClient(conf: Configuration) {
    */
   def load(gcsPath: String, destinationTable: TableReference,
            writeDisposition: WriteDisposition.Value = null,
-           createDisposition: CreateDisposition.Value = null): Unit = {
+           createDisposition: CreateDisposition.Value = null,
+           isPartitionedByDay: Boolean = false): Unit = {
+
     val tableName = BigQueryStrings.toString(destinationTable)
+    if(isPartitionedByDay) {
+        logger.info("Creating Time Partitioned Table")
+        val datasetId = destinationTable.getDatasetId;
+        val projectId: String = destinationTable.getProjectId;
+        val table = new Table();
+        table.setTableReference(destinationTable)
+        val timePartitioning = new TimePartitioning();
+        timePartitioning.setType("DAY");
+        timePartitioning.setExpirationMs(1L);
+        table.setTimePartitioning(timePartitioning);
+        val request = bigquery.tables().insert(projectId, datasetId, table);
+        val response = request.execute();
+    }
     logger.info(s"Loading $gcsPath into $tableName")
     var loadConfig = new JobConfigurationLoad()
       .setDestinationTable(destinationTable)

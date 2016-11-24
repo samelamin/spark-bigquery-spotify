@@ -45,6 +45,7 @@ private[bigquery] object BigQueryClient {
   val STAGING_DATASET_LOCATION_DEFAULT = "US"
   val STAGING_DATASET_TABLE_EXPIRATION_MS = 86400000L
   val STAGING_DATASET_DESCRIPTION = "Spark BigQuery staging dataset"
+  val DEFAULT_TABLE_EXPIRATION_MS = 259200000L
 
   private var instance: BigQueryClient = null
 
@@ -121,7 +122,7 @@ private[bigquery] class BigQueryClient(conf: Configuration) {
         table.setTableReference(destinationTable)
         val timePartitioning = new TimePartitioning();
         timePartitioning.setType("DAY");
-        timePartitioning.setExpirationMs(1L);
+        timePartitioning.setExpirationMs(DEFAULT_TABLE_EXPIRATION_MS);
         table.setTimePartitioning(timePartitioning);
         val request = bigquery.tables().insert(projectId, datasetId, table);
         val response = request.execute();

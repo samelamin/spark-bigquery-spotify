@@ -115,9 +115,10 @@ private[bigquery] class BigQueryClient(conf: Configuration) {
 
     val tableName = BigQueryStrings.toString(destinationTable)
     if(isPartitionedByDay) {
-        logger.info("Creating Time Partitioned Table")
         val datasetId = destinationTable.getDatasetId;
         val projectId: String = destinationTable.getProjectId;
+      try {
+        logger.info("Creating Time Partitioned Table")
         val table = new Table();
         table.setTableReference(destinationTable)
         val timePartitioning = new TimePartitioning();
@@ -126,6 +127,11 @@ private[bigquery] class BigQueryClient(conf: Configuration) {
         table.setTimePartitioning(timePartitioning);
         val request = bigquery.tables().insert(projectId, datasetId, table);
         val response = request.execute();
+        } catch {
+          case e: GoogleJsonResponseException if e.getStatusCode == 409 =>
+            logger.info(s"$projectId:$datasetId.$tableName already exists")
+          case NonFatal(e) => throw e
+        }
     }
     logger.info(s"Loading $gcsPath into $tableName")
     var loadConfig = new JobConfigurationLoad()

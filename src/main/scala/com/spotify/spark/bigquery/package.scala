@@ -17,6 +17,7 @@
 
 package com.spotify.spark
 
+import com.spotify.spark.bigquery.BigQueryAdapter
 import com.databricks.spark.avro._
 import com.google.api.services.bigquery.model.TableReference
 import com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem
@@ -98,7 +99,8 @@ package object bigquery {
 
     /**
      * Perform a BigQuery SELECT query and load results as a [[DataFrame]].
-     * @param sqlQuery SQL query in SQL-2011 dialect.
+      *
+      * @param sqlQuery SQL query in SQL-2011 dialect.
      */
     def bigQuerySelect(sqlQuery: String): DataFrame = bigQueryTable(bq.query(sqlQuery))
 
@@ -144,24 +146,9 @@ package object bigquery {
     val sqlContext = self.sqlContext
     val conf = sqlContext.sparkContext.hadoopConfiguration
     val bq = BigQueryClient.getInstance(conf)
-
+    val adaptedDf: DataFrame = BigQueryAdapter(self)
     sqlContext.setConf("spark.sql.avro.compression.codec", "deflate")
 
-    /**
-     * Save a [[DataFrame]] to a BigQuery table.
-     */
-    def saveAsBigQueryTable(tableRef: TableReference,
-                            writeDisposition: WriteDisposition.Value,
-                            createDisposition: CreateDisposition.Value,
-                            isPartitionedByDay: Boolean): Unit = {
-      val bucket = conf.get(BigQueryConfiguration.GCS_BUCKET_KEY)
-      val temp = s"spark-bigquery-${System.currentTimeMillis()}=${Random.nextInt(Int.MaxValue)}"
-      val gcsPath = s"gs://$bucket/hadoop/tmp/spark-bigquery/$temp"
-      self.write.avro(gcsPath)
-      val df = bq.load(gcsPath, tableRef, writeDisposition, createDisposition, isPartitionedByDay)
-      delete(new Path(gcsPath))
-      df
-    }
 
     /**
      * Save a [[DataFrame]] to a BigQuery table.
@@ -169,12 +156,23 @@ package object bigquery {
     def saveAsBigQueryTable(tableSpec: String,
                             writeDisposition: WriteDisposition.Value = null,
                             createDisposition: CreateDisposition.Value = null,
-                            isPartitionedByDay: Boolean = false): Unit =
-      saveAsBigQueryTable(
-        BigQueryStrings.parseTableReference(tableSpec),
-        writeDisposition,
-        createDisposition,
-        isPartitionedByDay)
+                            isPartitionedByDay: Boolean = false): Unit = {
+
+
+      val tableRef = BigQueryStrings.parseTableReference(tableSpec)
+      val bucket = conf.get(BigQueryConfiguration.GCS_BUCKET_KEY)
+      val temp = s"spark-bigquery-${System.currentTimeMillis()}=${Random.nextInt(Int.MaxValue)}"
+      val gcsPath = s"gs://$bucket/hadoop/tmp/spark-bigquery/$temp"
+
+
+      self.write.avro(gcsPath)
+      val df = bq.load(gcsPath, tableRef, writeDisposition, createDisposition, isPartitionedByDay)
+      delete(new Path(gcsPath))
+      df
+
+
+
+    }
 
     private def delete(path: Path): Unit = {
       val fs = FileSystem.get(path.toUri, conf)

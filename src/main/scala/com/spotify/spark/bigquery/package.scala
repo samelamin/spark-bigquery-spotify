@@ -22,6 +22,7 @@ import com.databricks.spark.avro._
 import com.google.api.services.bigquery.model.TableReference
 import com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem
 import com.google.cloud.hadoop.io.bigquery._
+import com.google.gson.JsonParser
 import org.apache.avro.Schema
 import org.apache.avro.generic.GenericData
 import org.apache.hadoop.fs.{FileSystem, Path}
@@ -148,6 +149,7 @@ package object bigquery {
     val bq = BigQueryClient.getInstance(conf)
     val adaptedDf: DataFrame = BigQueryAdapter(self)
     sqlContext.setConf("spark.sql.avro.compression.codec", "deflate")
+    lazy val jsonParser = new JsonParser()
 
 
     /**
@@ -157,21 +159,15 @@ package object bigquery {
                             writeDisposition: WriteDisposition.Value = null,
                             createDisposition: CreateDisposition.Value = null,
                             isPartitionedByDay: Boolean = false): Unit = {
+      val tableSchema = BigQuerySchema(adaptedDf)
+      BigQueryConfiguration.configureBigQueryOutput(conf, tableSpec, tableSchema)
+      conf.set("mapreduce.job.outputformat.class", classOf[BigQueryOutputFormat[_, _]].getName)
 
-
-      val tableRef = BigQueryStrings.parseTableReference(tableSpec)
-      val bucket = conf.get(BigQueryConfiguration.GCS_BUCKET_KEY)
-      val temp = s"spark-bigquery-${System.currentTimeMillis()}=${Random.nextInt(Int.MaxValue)}"
-      val gcsPath = s"gs://$bucket/hadoop/tmp/spark-bigquery/$temp"
-
-
-      self.write.avro(gcsPath)
-      val df = bq.load(gcsPath, tableRef, writeDisposition, createDisposition, isPartitionedByDay)
-      delete(new Path(gcsPath))
-      df
-
-
-
+      adaptedDf
+        .toJSON
+        .rdd
+        .map(json => (null, jsonParser.parse(json)))
+        .saveAsNewAPIHadoopDataset(conf)
     }
 
     private def delete(path: Path): Unit = {

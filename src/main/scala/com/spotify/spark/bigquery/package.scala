@@ -16,22 +16,17 @@
  */
 
 package com.spotify.spark
-
-import com.spotify.spark.bigquery.BigQueryAdapter
-import com.databricks.spark.avro._
 import com.google.api.services.bigquery.model.TableReference
 import com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem
-import com.google.cloud.hadoop.io.bigquery._
-import com.google.gson.JsonParser
 import org.apache.avro.Schema
 import org.apache.avro.generic.GenericData
-import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.hadoop.io.LongWritable
-import org.apache.hadoop.mapreduce.InputFormat
+import org.apache.hadoop.mapred.InputFormat
 import org.apache.spark.sql.types.StructType
-import org.apache.spark.sql.{DataFrame, Row, SQLContext}
-
-import scala.util.Random
+import com.google.cloud.hadoop.io.bigquery.{BigQueryConfiguration, BigQueryOutputFormat}
+import com.google.gson.{JsonObject, JsonParser}
+import org.apache.spark.sql._
+import com.google.cloud.hadoop.io.bigquery._
 
 package object bigquery {
 
@@ -50,7 +45,7 @@ package object bigquery {
 
     val sc = self.sparkContext
     val conf = sc.hadoopConfiguration
-    val bq = BigQueryClient.getInstance(conf)
+    val STAGING_DATASET_LOCATION = "bq.staging_dataset.location"
 
     // Register GCS implementation
     if (conf.get("fs.gs.impl") == null) {
@@ -79,7 +74,7 @@ package object bigquery {
      * Set BigQuery dataset location, e.g. US, EU.
      */
     def setBigQueryDatasetLocation(location: String): Unit =
-      conf.set(BigQueryClient.STAGING_DATASET_LOCATION, location)
+      conf.set(STAGING_DATASET_LOCATION, location)
 
     /**
      * Set GCP JSON key file.
@@ -103,32 +98,22 @@ package object bigquery {
       *
       * @param sqlQuery SQL query in SQL-2011 dialect.
      */
-    def bigQuerySelect(sqlQuery: String): DataFrame = bigQueryTable(bq.query(sqlQuery))
 
     /**
      * Load a BigQuery table as a [[DataFrame]].
      */
     def bigQueryTable(tableRef: TableReference): DataFrame = {
-      conf.setClass(
-        AbstractBigQueryInputFormat.INPUT_FORMAT_CLASS_KEY,
-        classOf[AvroBigQueryInputFormat], classOf[InputFormat[LongWritable, GenericData.Record]])
+      val fullyQualifiedInputTableId = BigQueryStrings.toString(tableRef)
+      BigQueryConfiguration.configureBigQueryInput(conf, fullyQualifiedInputTableId)
 
-      BigQueryConfiguration.configureBigQueryInput(
-        conf, tableRef.getProjectId, tableRef.getDatasetId, tableRef.getTableId)
+      val tableData = sc.newAPIHadoopRDD(
+        conf,
+        classOf[GsonBigQueryInputFormat],
+        classOf[LongWritable],
+        classOf[JsonObject]).map(_._2.toString)
 
-      val fClass = classOf[AvroBigQueryInputFormat]
-      val kClass = classOf[LongWritable]
-      val vClass = classOf[GenericData.Record]
-      val rdd = sc
-        .newAPIHadoopRDD(conf, fClass, kClass, vClass)
-        .map(_._2)
-      val schemaString = rdd.map(_.getSchema.toString).first()
-      val schema = new Schema.Parser().parse(schemaString)
-
-      val structType = SchemaConverters.toSqlType(schema).dataType.asInstanceOf[StructType]
-      val converter = SchemaConverters.createConverterToSQL(schema)
-        .asInstanceOf[GenericData.Record => Row]
-      self.createDataFrame(rdd.map(converter), structType)
+      val df = self.read.json(tableData)
+      df
     }
 
     /**
@@ -142,16 +127,14 @@ package object bigquery {
   /**
    * Enhanced version of [[DataFrame]] with BigQuery support.
    */
-  implicit class BigQueryDataFrame(self: DataFrame) {
+  implicit class BigQueryDataFrame(self: DataFrame) extends Serializable {
 
     val sqlContext = self.sqlContext
+    @transient
     val conf = sqlContext.sparkContext.hadoopConfiguration
-    val bq = BigQueryClient.getInstance(conf)
-    val adaptedDf: DataFrame = BigQueryAdapter(self)
-    sqlContext.setConf("spark.sql.avro.compression.codec", "deflate")
+    @transient
     lazy val jsonParser = new JsonParser()
-
-
+    val adaptedDf = BigQueryAdapter(self)
     /**
      * Save a [[DataFrame]] to a BigQuery table.
      */
@@ -160,6 +143,7 @@ package object bigquery {
                             createDisposition: CreateDisposition.Value = null,
                             isPartitionedByDay: Boolean = false): Unit = {
       val tableSchema = BigQuerySchema(adaptedDf)
+
       BigQueryConfiguration.configureBigQueryOutput(conf, tableSpec, tableSchema)
       conf.set("mapreduce.job.outputformat.class", classOf[BigQueryOutputFormat[_, _]].getName)
 
@@ -168,11 +152,6 @@ package object bigquery {
         .rdd
         .map(json => (null, jsonParser.parse(json)))
         .saveAsNewAPIHadoopDataset(conf)
-    }
-
-    private def delete(path: Path): Unit = {
-      val fs = FileSystem.get(path.toUri, conf)
-      fs.delete(path, true)
     }
 
   }

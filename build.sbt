@@ -27,7 +27,6 @@ spAppendScalaVersion := true
 spIncludeMaven := true
 spIgnoreProvided := true
 libraryDependencies ++= Seq(
-  "com.databricks" %% "spark-avro" % "3.0.0",
   "com.google.cloud.bigdataoss" % "bigquery-connector" % "0.10.0-hadoop2"
     exclude ("com.google.guava", "guava-jdk5")
     exclude ("org.apache.avro", "avro-ipc"),
@@ -38,13 +37,7 @@ libraryDependencies ++= Seq(
   "org.scalatest" %% "scalatest" % "2.2.1" % "test"
 )
 
-assemblyMergeStrategy in assembly := {
-  case PathList("com", "databricks", "spark", "avro", xs @ _*) => MergeStrategy.first
-  case x =>
-    val oldStrategy = (assemblyMergeStrategy in assembly).value
-    oldStrategy(x)
 
-}
 
 // Release settings
 licenses += "Apache-2.0" -> url("http://opensource.org/licenses/Apache-2.0")

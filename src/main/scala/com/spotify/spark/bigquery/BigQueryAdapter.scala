@@ -1,10 +1,14 @@
 package com.spotify.spark.bigquery
 
-import org.apache.spark.sql._
+import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.types._
 
 /**
-  * Created by root on 12/15/16.
+  * Make DataFrame's schema valid for importing to BigQuery.
+  * The rules are:
+  *
+  * 1) Valid characters are: letters, digits and underscores
+  * 2) All letters must be lowercase
   */
 object BigQueryAdapter {
 

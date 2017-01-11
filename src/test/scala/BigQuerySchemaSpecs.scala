@@ -21,9 +21,6 @@ class BigQuerySchemaSpecs extends FeatureSpec with GivenWhenThen with DataFrameS
       val tableSchema = BigQuerySchema(df)
 
       Then("We should receive a BQ Table Schema")
-
-
-      println(tableSchema)
       val expectedSchema = """[ {
                              |  "name" : "error",
                              |  "mode" : "NULLABLE",
